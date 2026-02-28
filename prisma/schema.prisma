@@ -1,0 +1,131 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id             String              @id @default(cuid())
+  clerkId        String              @unique
+  email          String
+  createdAt      DateTime            @default(now())
+  config         Config?
+  accounts       Account[]
+  categories     BudgetCategory[]
+  expenses       Expense[]
+  balanceEntries BalanceSheetEntry[]
+  properties     RentalProperty[]
+}
+
+model Config {
+  id                       String  @id @default(cuid())
+  userId                   String  @unique
+  user                     User    @relation(fields: [userId], references: [id])
+  grossMonthlySalary       Decimal @default(0)
+  monthlyRetirementContrib Decimal @default(0)
+  netMonthlySalary         Decimal @default(0)
+  avgExtraMonthlyIncome    Decimal @default(0)
+  setupComplete            Boolean @default(false)
+
+  fixedCosts FixedCost[]
+}
+
+model FixedCost {
+  id       String  @id @default(cuid())
+  configId String
+  config   Config  @relation(fields: [configId], references: [id])
+  name     String
+  amount   Decimal @default(0)
+}
+
+model Account {
+  id             String              @id @default(cuid())
+  userId         String
+  user           User                @relation(fields: [userId], references: [id])
+  nickname       String
+  type           AccountType
+  isActive       Boolean             @default(true)
+  sortOrder      Int                 @default(0)
+  balanceEntries BalanceSheetEntry[]
+}
+
+enum AccountType {
+  PRIMARY_CHECKING
+  OTHER_CHECKING
+  SAVINGS
+  RETIREMENT_PRETAX
+  RETIREMENT_AFTERTAX
+  INVESTMENT
+  REAL_ESTATE
+  OTHER_ASSET
+  MORTGAGE
+  CAR_LOAN
+  CREDIT_CARD
+  OTHER_LIABILITY
+}
+
+model BudgetCategory {
+  id           String       @id @default(cuid())
+  userId       String
+  user         User         @relation(fields: [userId], references: [id])
+  name         String
+  type         CategoryType
+  budgetAmount Decimal      @default(0)
+  sortOrder    Int          @default(0)
+  isActive     Boolean      @default(true)
+  expenses     Expense[]
+}
+
+enum CategoryType {
+  MONTHLY
+  ANNUAL
+  FIXED_COST
+}
+
+model Expense {
+  id         String         @id @default(cuid())
+  userId     String
+  user       User           @relation(fields: [userId], references: [id])
+  date       DateTime
+  vendor     String
+  amount     Decimal
+  categoryId String
+  category   BudgetCategory @relation(fields: [categoryId], references: [id])
+  notes      String?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+}
+
+model BalanceSheetEntry {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  month     DateTime
+  accountId String
+  account   Account  @relation(fields: [accountId], references: [id])
+  value     Decimal
+
+  @@unique([userId, month, accountId])
+}
+
+model RentalProperty {
+  id                String  @id @default(cuid())
+  userId            String
+  user              User    @relation(fields: [userId], references: [id])
+  address           String
+  propertyValue     Decimal @default(0)
+  mortgageBalance   Decimal @default(0)
+  interestRate      Decimal @default(0)
+  principalInterest Decimal @default(0)
+  escrow            Decimal @default(0)
+  monthlyRent       Decimal @default(0)
+  maintenancePct    Decimal @default(0.10)
+  isActive          Boolean @default(true)
+}

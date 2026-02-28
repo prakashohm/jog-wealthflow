@@ -9,9 +9,19 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@clerk/nextjs": "^6.39.0",
+    "@hookform/resolvers": "^5.2.2",
+    "@prisma/client": "^5.22.0",
+    "@tanstack/react-query": "^5.90.21",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.575.0",
     "next": "16.1.6",
+    "prisma": "^5.22.0",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-hook-form": "^7.71.2",
+    "recharts": "^3.7.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
