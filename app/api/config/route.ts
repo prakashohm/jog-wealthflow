@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getEffectiveUserId } from "@/lib/getEffectiveUserId";
 
 async function getOrCreateUser(clerkId: string, email: string) {
     let user = await prisma.user.findUnique({ where: { clerkId } });
@@ -10,17 +11,21 @@ async function getOrCreateUser(clerkId: string, email: string) {
     return user;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
     const { userId: clerkId } = await auth();
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    const user = await prisma.user.findUnique({
-        where: { clerkId },
-        include: { config: { include: { fixedCosts: true } } },
-    });
+    const user = await prisma.user.findUnique({ where: { clerkId } });
     if (!user) return NextResponse.json(null);
 
-    return NextResponse.json(user.config);
+    const effectiveUserId = await getEffectiveUserId(req, user.id);
+
+    const owner = await prisma.user.findUnique({
+        where: { id: effectiveUserId },
+        include: { config: { include: { fixedCosts: true } } },
+    });
+
+    return NextResponse.json(owner?.config ?? null);
 }
 
 export async function POST(req: Request) {

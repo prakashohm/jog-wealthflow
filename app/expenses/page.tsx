@@ -3,6 +3,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { Plus, Search, Trash2, Pencil, X, LayoutList, Check, Upload } from "lucide-react";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { formatCurrency, formatShortDate, monthKeyFromDate } from "@/lib/formatters";
+import { sharedHeaders } from "@/components/SharedContext";
 
 interface Category {
     id: string;
@@ -62,7 +63,7 @@ export default function ExpensesPage() {
             await Promise.all(valid.map(r =>
                 fetch("/api/expenses", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", ...sharedHeaders() },
                     body: JSON.stringify({ ...r, amount: parseFloat(r.amount) }),
                 })
             ));
@@ -151,9 +152,10 @@ export default function ExpensesPage() {
     }
 
     const fetchAll = useCallback(async () => {
+        const hdrs = sharedHeaders();
         const [catRes, expRes] = await Promise.all([
-            fetch("/api/categories"),
-            fetch("/api/expenses"),
+            fetch("/api/categories", { headers: hdrs }),
+            fetch("/api/expenses", { headers: hdrs }),
         ]);
         const cats = await catRes.json();
         const exps = await expRes.json();
@@ -179,13 +181,13 @@ export default function ExpensesPage() {
             if (editingId) {
                 await fetch(`/api/expenses/${editingId}`, {
                     method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", ...sharedHeaders() },
                     body: JSON.stringify({ ...form, amount: parseFloat(form.amount) }),
                 });
             } else {
                 await fetch("/api/expenses", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: { "Content-Type": "application/json", ...sharedHeaders() },
                     body: JSON.stringify({ ...form, amount: parseFloat(form.amount) }),
                 });
             }

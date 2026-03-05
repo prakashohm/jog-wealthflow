@@ -1,16 +1,19 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getEffectiveUserId } from "@/lib/getEffectiveUserId";
 
-export async function GET() {
+export async function GET(req: Request) {
     const { userId: clerkId } = await auth();
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const user = await prisma.user.findUnique({ where: { clerkId } });
     if (!user) return NextResponse.json([]);
 
+    const effectiveUserId = await getEffectiveUserId(req, user.id);
+
     const properties = await prisma.rentalProperty.findMany({
-        where: { userId: user.id, isActive: true },
+        where: { userId: effectiveUserId, isActive: true },
     });
 
     return NextResponse.json(properties);
@@ -23,10 +26,12 @@ export async function POST(req: Request) {
     const user = await prisma.user.findUnique({ where: { clerkId } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
+    const effectiveUserId = await getEffectiveUserId(req, user.id);
+
     const body = await req.json();
     const property = await prisma.rentalProperty.create({
         data: {
-            userId: user.id,
+            userId: effectiveUserId,
             ...body,
         },
     });

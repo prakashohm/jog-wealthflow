@@ -16,6 +16,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { formatCurrency, formatPercent, daysLeftInMonth, valueColor } from "@/lib/formatters";
 import { computeGuiltFreeBudget } from "@/lib/calculations";
 import { TrendingUp, TrendingDown, Plus, RefreshCw, AlertCircle } from "lucide-react";
+import { sharedHeaders } from "@/components/SharedContext";
 
 interface Category {
   id: string;
@@ -50,12 +51,10 @@ function OverviewCard({
   label,
   value,
   change,
-  positive,
 }: {
   label: string;
   value: number;
   change?: number;
-  positive?: boolean;
 }) {
   const isUp = (change ?? 0) >= 0;
   return (
@@ -71,6 +70,34 @@ function OverviewCard({
     </div>
   );
 }
+
+function NetWorthHeroCard({ value }: { value: number }) {
+  const isPositive = value >= 0;
+  return (
+    <div className="relative overflow-hidden rounded-3xl p-6"
+      style={{ background: "linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4c1d95 100%)" }}>
+      {/* Decorative glow rings */}
+      <div className="absolute -top-8 -right-8 w-40 h-40 rounded-full bg-indigo-500/20 blur-2xl pointer-events-none" />
+      <div className="absolute -bottom-6 -left-6 w-32 h-32 rounded-full bg-violet-500/15 blur-2xl pointer-events-none" />
+      {/* Label */}
+      <p className="relative text-indigo-300 text-xs font-semibold uppercase tracking-widest mb-1">Net Worth</p>
+      {/* Value */}
+      <p className={`relative text-4xl font-extrabold tracking-tight ${isPositive ? "text-white" : "text-red-300"
+        }`}>
+        {formatCurrency(value)}
+      </p>
+      {/* Positive / negative pill */}
+      <div className={`relative mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold ${isPositive
+          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+          : "bg-red-500/20 text-red-300 border border-red-500/30"
+        }`}>
+        {isPositive ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+        {isPositive ? "Positive net worth" : "Negative net worth"}
+      </div>
+    </div>
+  );
+}
+
 
 function BudgetBar({
   name,
@@ -142,21 +169,28 @@ export default function DashboardPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [catRes, expRes, balRes, cfgRes] = await Promise.all([
-        fetch("/api/categories"),
-        fetch("/api/expenses"),
-        fetch("/api/balance-sheet"),
-        fetch("/api/config"),
+      const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const hdrs = sharedHeaders();
+      const [catRes, expRes, balRes, balAllRes, cfgRes] = await Promise.all([
+        fetch("/api/categories", { headers: hdrs }),
+        fetch("/api/expenses", { headers: hdrs }),
+        fetch(`/api/balance-sheet?month=${currentMonthKey}`, { headers: hdrs }),
+        fetch("/api/balance-sheet", { headers: hdrs }),
+        fetch("/api/config", { headers: hdrs }),
       ]);
-      const [cats, exps, bal, cfg] = await Promise.all([
+      const [cats, exps, balCurrent, balAll, cfg] = await Promise.all([
         catRes.json(),
         expRes.json(),
         balRes.json(),
+        balAllRes.json(),
         cfgRes.json(),
       ]);
       setCategories(Array.isArray(cats) ? cats : []);
       setExpenses(Array.isArray(exps) ? exps : []);
-      setBalanceEntries(Array.isArray(bal) ? bal : []);
+      // Use current month entries if available — matches what Balance Sheet shows.
+      // Fall back to all entries (deduped to latest-per-account) only if no current month data.
+      const currentMonthHasData = Array.isArray(balCurrent) && balCurrent.length > 0;
+      setBalanceEntries(currentMonthHasData ? balCurrent : (Array.isArray(balAll) ? balAll : []));
       setConfig(cfg);
     } finally {
       setLoading(false);
@@ -309,8 +343,10 @@ export default function DashboardPage() {
         {/* Overview Cards */}
         <section>
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-3">Overview</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <OverviewCard label="Net Worth" value={netWorth} />
+          {/* Net Worth — hero */}
+          <NetWorthHeroCard value={netWorth} />
+          {/* Supporting metrics grid */}
+          <div className="grid grid-cols-2 gap-3 mt-3">
             <OverviewCard label="Monthly Income" value={totalNetIncome} />
             <OverviewCard label="Liquid Savings" value={liquidSavings} />
             <OverviewCard label="Retirement" value={retirement} />

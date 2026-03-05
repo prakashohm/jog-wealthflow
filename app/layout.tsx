@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Header } from "@/components/layout/Header";
+import { ViewingAsBanner } from "@/components/layout/ViewingAsBanner";
+import { SharedContextProvider } from "@/components/SharedContext";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -34,8 +36,11 @@ export default function RootLayout({
           />
         </head>
         <body className="min-h-screen bg-slate-950 text-slate-100 antialiased">
-          <Header />
-          <main className="pb-20">{children}</main>
+          <SharedContextProvider>
+            <Header />
+            <ViewingAsBanner />
+            <main className="pb-20">{children}</main>
+          </SharedContextProvider>
         </body>
       </html>
     </ClerkProvider>

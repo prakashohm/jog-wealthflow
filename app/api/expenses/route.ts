@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getEffectiveUserId } from "@/lib/getEffectiveUserId";
 
 export async function GET(req: Request) {
     const { userId: clerkId } = await auth();
@@ -9,12 +10,14 @@ export async function GET(req: Request) {
     const user = await prisma.user.findUnique({ where: { clerkId } });
     if (!user) return NextResponse.json([]);
 
+    const effectiveUserId = await getEffectiveUserId(req, user.id);
+
     const { searchParams } = new URL(req.url);
     const month = searchParams.get("month"); // "2026-02"
     const categoryId = searchParams.get("categoryId");
     const vendor = searchParams.get("vendor");
 
-    const where: Record<string, unknown> = { userId: user.id };
+    const where: Record<string, unknown> = { userId: effectiveUserId };
 
     if (month) {
         const [year, m] = month.split("-").map(Number);
@@ -41,12 +44,14 @@ export async function POST(req: Request) {
     const user = await prisma.user.findUnique({ where: { clerkId } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
+    const effectiveUserId = await getEffectiveUserId(req, user.id);
+
     const body = await req.json();
     const { date, vendor, amount, categoryId, notes } = body;
 
     const expense = await prisma.expense.create({
         data: {
-            userId: user.id,
+            userId: effectiveUserId,
             date: new Date(date),
             vendor,
             amount,

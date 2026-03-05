@@ -4,6 +4,7 @@ import { BottomNav } from "@/components/layout/BottomNav";
 import { formatCurrency, formatPercent, formatMonthYear } from "@/lib/formatters";
 import { computeNetWorth, computeGrowthRate, computeRollingAverage } from "@/lib/calculations";
 import { ChevronLeft, ChevronRight, Save } from "lucide-react";
+import { sharedHeaders } from "@/components/SharedContext";
 
 interface Account {
     id: string;
@@ -58,6 +59,7 @@ export default function BalanceSheetPage() {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
+    const [carriedOver, setCarriedOver] = useState(false);
 
     const now = new Date();
     const [viewYear, setViewYear] = useState(now.getFullYear());
@@ -85,9 +87,10 @@ export default function BalanceSheetPage() {
         (viewYear === now.getFullYear() && viewMonth > now.getMonth());
 
     const fetchData = useCallback(async () => {
+        const hdrs = sharedHeaders();
         const [accRes, entRes] = await Promise.all([
-            fetch("/api/accounts"),
-            fetch("/api/balance-sheet"),
+            fetch("/api/accounts", { headers: hdrs }),
+            fetch("/api/balance-sheet", { headers: hdrs }),
         ]);
         const accs = await accRes.json();
         const ents = await entRes.json();
@@ -102,14 +105,29 @@ export default function BalanceSheetPage() {
     useEffect(() => {
         if (!accounts.length) return;
         const key = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}`;
+        const hasThisMonth = allEntries.some(e => e.month.substring(0, 7) === key);
         const prefill: Record<string, string> = {};
+
         for (const acc of accounts) {
-            const entry = allEntries.find(
+            // Look for an entry saved for this exact month
+            const thisMonthEntry = allEntries.find(
                 (e: BalanceEntry) => e.accountId === acc.id && e.month.startsWith(key)
             );
-            prefill[acc.id] = entry ? String(entry.value) : "";
+            if (thisMonthEntry) {
+                prefill[acc.id] = String(thisMonthEntry.value);
+            } else {
+                // Fall back to the most recent prior entry for this account
+                const priorEntry = allEntries
+                    .filter(e => e.accountId === acc.id && e.month.substring(0, 7) < key)
+                    .sort((a, b) => b.month.localeCompare(a.month))[0];
+                prefill[acc.id] = priorEntry ? String(priorEntry.value) : "";
+            }
         }
         setBalances(prefill);
+        // Show carry-over banner only when there are no saved entries for this month
+        // but we do have some prior data to carry forward
+        const hasPriorData = allEntries.some(e => e.month.substring(0, 7) < key);
+        setCarriedOver(!hasThisMonth && hasPriorData);
     }, [viewYear, viewMonth, allEntries, accounts]);
 
     const monthKey = `${viewYear}-${String(viewMonth + 1).padStart(2, "0")}`;
@@ -122,7 +140,7 @@ export default function BalanceSheetPage() {
 
         await fetch("/api/balance-sheet", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...sharedHeaders() },
             body: JSON.stringify({ month: monthKey, entries }),
         });
         setSaving(false);
@@ -223,8 +241,8 @@ export default function BalanceSheetPage() {
                             key={f.value}
                             onClick={() => setBalanceFilter(f.value)}
                             className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all ${balanceFilter === f.value
-                                    ? "bg-indigo-500 text-white"
-                                    : "bg-slate-800 text-slate-400 hover:text-white"
+                                ? "bg-indigo-500 text-white"
+                                : "bg-slate-800 text-slate-400 hover:text-white"
                                 }`}
                         >{f.label}</button>
                     ))}
@@ -235,6 +253,13 @@ export default function BalanceSheetPage() {
                             <p className="text-slate-500 text-sm text-center py-8">No accounts set up. <a href="/setup" className="text-indigo-400">Add accounts →</a></p>
                         ) : (
                             <>
+                                {/* Carry-over notice */}
+                                {carriedOver && (
+                                    <div className="flex items-start gap-2.5 px-3 py-2.5 bg-amber-500/10 border border-amber-500/30 rounded-xl text-xs text-amber-300">
+                                        <span className="text-base leading-none mt-0.5">📋</span>
+                                        <span>Values carried from your last saved month — update anything that changed and hit <strong>Save</strong>.</span>
+                                    </div>
+                                )}
                                 {/* Assets */}
                                 <div>
                                     <h2 className="text-xs font-semibold uppercase tracking-wider text-emerald-400 mb-2">Assets</h2>

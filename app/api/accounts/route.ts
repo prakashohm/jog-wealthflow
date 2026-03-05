@@ -1,16 +1,19 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getEffectiveUserId } from "@/lib/getEffectiveUserId";
 
-export async function GET() {
+export async function GET(req: Request) {
     const { userId: clerkId } = await auth();
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const user = await prisma.user.findUnique({ where: { clerkId } });
     if (!user) return NextResponse.json([]);
 
+    const effectiveUserId = await getEffectiveUserId(req, user.id);
+
     const accounts = await prisma.account.findMany({
-        where: { userId: user.id, isActive: true },
+        where: { userId: effectiveUserId, isActive: true },
         orderBy: [{ type: "asc" }, { sortOrder: "asc" }],
     });
 
@@ -24,13 +27,15 @@ export async function POST(req: Request) {
     const user = await prisma.user.findUnique({ where: { clerkId } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
+    const effectiveUserId = await getEffectiveUserId(req, user.id);
+
     const body = await req.json();
 
     if (Array.isArray(body.accounts)) {
         const incoming: { nickname: string; type: string; sortOrder?: number }[] = body.accounts;
 
         // Fetch existing active accounts for this user
-        const existing: { id: string; nickname: string; type: string }[] = await prisma.account.findMany({ where: { userId: user.id, isActive: true } });
+        const existing: { id: string; nickname: string; type: string }[] = await prisma.account.findMany({ where: { userId: effectiveUserId, isActive: true } });
 
         // Upsert each incoming account by nickname+type (preserves IDs → no orphaned balance entries)
         for (const acc of incoming) {
@@ -42,7 +47,7 @@ export async function POST(req: Request) {
                 });
             } else {
                 await prisma.account.create({
-                    data: { userId: user.id, nickname: acc.nickname, type: acc.type as never, sortOrder: acc.sortOrder || 0 },
+                    data: { userId: effectiveUserId, nickname: acc.nickname, type: acc.type as never, sortOrder: acc.sortOrder || 0 },
                 });
             }
         }
@@ -62,7 +67,7 @@ export async function POST(req: Request) {
 
     const account = await prisma.account.create({
         data: {
-            userId: user.id,
+            userId: effectiveUserId,
             nickname: body.nickname,
             type: body.type,
             sortOrder: body.sortOrder || 0,

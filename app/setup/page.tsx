@@ -108,23 +108,7 @@ export default function SetupPage() {
     useEffect(() => {
         async function loadSaved() {
             try {
-                // 1. Restore from localStorage draft first (survives refresh before final save)
-                const raw = localStorage.getItem(`setup-draft-${user?.id ?? "anon"}`);
-                if (raw) {
-                    try {
-                        const draft = JSON.parse(raw);
-                        if (draft.income) setIncome(draft.income);
-                        if (draft.extraIncome) setExtraIncome(draft.extraIncome);
-                        if (draft.fixedCosts) setFixedCosts(draft.fixedCosts);
-                        if (draft.monthlyCategories) setMonthlyCategories(draft.monthlyCategories);
-                        if (draft.annualCategories) setAnnualCategories(draft.annualCategories);
-                        if (draft.accounts) setAccounts(draft.accounts);
-                        if (draft.step != null) setStep(draft.step);
-                        return; // Draft takes full precedence — skip API
-                    } catch { /* corrupt draft, fall through */ }
-                }
-
-                // 2. No draft — restore from DB
+                // Always fetch from DB first — accounts must always reflect saved state
                 const [configRes, catRes, accRes] = await Promise.all([
                     fetch("/api/config"),
                     fetch("/api/categories"),
@@ -134,7 +118,7 @@ export default function SetupPage() {
                 const cats = await catRes.json();
                 const accs = await accRes.json();
 
-                // Pre-fill income
+                // Pre-fill income from DB
                 if (config && config.grossMonthlySalary != null) {
                     setIncome({
                         grossMonthlySalary: String(config.grossMonthlySalary || ""),
@@ -145,7 +129,7 @@ export default function SetupPage() {
                     if (extra > 0) setExtraIncome([{ name: "Extra Income", amount: extra }]);
                 }
 
-                // Pre-fill fixed costs
+                // Pre-fill fixed costs from DB
                 if (config?.fixedCosts?.length) {
                     const editable = config.fixedCosts
                         .filter((fc: { name: string; amount: number }) => fc.name !== "Annual Budget Set-aside")
@@ -153,7 +137,7 @@ export default function SetupPage() {
                     if (editable.length > 0) setFixedCosts(editable);
                 }
 
-                // Pre-fill categories
+                // Pre-fill categories from DB
                 if (Array.isArray(cats) && cats.length > 0) {
                     const monthly = cats
                         .filter((c: { type: string }) => c.type === "MONTHLY")
@@ -165,9 +149,26 @@ export default function SetupPage() {
                     if (annual.length > 0) setAnnualCategories(annual);
                 }
 
-                // Pre-fill accounts
+                // Pre-fill accounts from DB — always authoritative
                 if (Array.isArray(accs) && accs.length > 0) {
                     setAccounts(accs.map((a: { nickname: string; type: string }) => ({ nickname: a.nickname, type: a.type })));
+                }
+
+                // Now layer any unsaved draft on top (income/costs/categories only — NOT accounts,
+                // since those are always saved-to-DB immediately via the wizard)
+                const raw = localStorage.getItem(`setup-draft-${user?.id ?? "anon"}`);
+                if (raw) {
+                    try {
+                        const draft = JSON.parse(raw);
+                        // Only restore wizard form fields that haven't been saved yet
+                        // Deliberately skip draft.accounts — DB is the source of truth
+                        if (draft.income) setIncome(draft.income);
+                        if (draft.extraIncome) setExtraIncome(draft.extraIncome);
+                        if (draft.fixedCosts) setFixedCosts(draft.fixedCosts);
+                        if (draft.monthlyCategories) setMonthlyCategories(draft.monthlyCategories);
+                        if (draft.annualCategories) setAnnualCategories(draft.annualCategories);
+                        if (draft.step != null) setStep(draft.step);
+                    } catch { /* corrupt draft, ignore */ }
                 }
             } catch (e) {
                 // Ignore — defaults remain

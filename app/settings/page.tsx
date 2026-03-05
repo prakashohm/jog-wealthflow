@@ -4,24 +4,44 @@ import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { BottomNav } from "@/components/layout/BottomNav";
 import { formatCurrency } from "@/lib/formatters";
-import { Pencil, Trash2, Download, AlertTriangle, ChevronDown } from "lucide-react";
+import { Pencil, Trash2, Download, AlertTriangle, ChevronDown, UserPlus, Copy, Check, UserX, Users } from "lucide-react";
+import { sharedHeaders } from "@/components/SharedContext";
 
 interface Category { id: string; name: string; type: string; budgetAmount: number; isActive: boolean; }
 interface Account { id: string; nickname: string; type: string; }
+interface ShareInvite { id: string; token: string; inviteeEmail: string; status: "PENDING" | "ACCEPTED" | "REVOKED"; createdAt: string; }
+
+const STATUS_STYLES: Record<string, string> = {
+    PENDING: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+    ACCEPTED: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
+    REVOKED: "bg-slate-700/50 text-slate-500 border border-slate-600/30",
+};
 
 export default function SettingsPage() {
     const { user } = useUser();
     const router = useRouter();
     const [categories, setCategories] = useState<Category[]>([]);
     const [accounts, setAccounts] = useState<Account[]>([]);
-    const [tab, setTab] = useState<"categories" | "accounts" | "data">("categories");
+    const [tab, setTab] = useState<"categories" | "accounts" | "data" | "sharing">("categories");
     const [loading, setLoading] = useState(true);
     const [resetConfirm, setResetConfirm] = useState(false);
     const [resetting, setResetting] = useState(false);
     const [resetOpen, setResetOpen] = useState(false);
 
+    // Sharing state
+    const [invites, setInvites] = useState<ShareInvite[]>([]);
+    const [inviteEmail, setInviteEmail] = useState("");
+    const [inviting, setInviting] = useState(false);
+    const [inviteSuccess, setInviteSuccess] = useState(false);
+    const [copied, setCopied] = useState(false);
+    const [inviteError, setInviteError] = useState("");
+
     const fetchData = useCallback(async () => {
-        const [catRes, accRes] = await Promise.all([fetch("/api/categories"), fetch("/api/accounts")]);
+        const hdrs = sharedHeaders();
+        const [catRes, accRes] = await Promise.all([
+            fetch("/api/categories", { headers: hdrs }),
+            fetch("/api/accounts", { headers: hdrs }),
+        ]);
         const cats = await catRes.json();
         const accs = await accRes.json();
         setCategories(Array.isArray(cats) ? cats : []);
@@ -29,7 +49,16 @@ export default function SettingsPage() {
         setLoading(false);
     }, []);
 
+    const fetchInvites = useCallback(async () => {
+        const res = await fetch("/api/sharing");
+        if (res.ok) {
+            const data = await res.json();
+            setInvites(Array.isArray(data) ? data : []);
+        }
+    }, []);
+
     useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => { if (tab === "sharing") fetchInvites(); }, [tab, fetchInvites]);
 
     async function archiveCategory(id: string) {
         await fetch("/api/categories", {
@@ -50,10 +79,7 @@ export default function SettingsPage() {
     }
 
     async function handleMasterReset() {
-        if (!resetConfirm) {
-            setResetConfirm(true);
-            return;
-        }
+        if (!resetConfirm) { setResetConfirm(true); return; }
         setResetting(true);
         try {
             await fetch("/api/reset", { method: "DELETE" });
@@ -86,6 +112,55 @@ export default function SettingsPage() {
         a.click();
     }
 
+    async function sendInvite() {
+        setInviteError("");
+        if (!inviteEmail.trim()) { setInviteError("Please enter an email address."); return; }
+        setInviting(true);
+        try {
+            const res = await fetch("/api/sharing", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: inviteEmail.trim() }),
+            });
+            const text = await res.text();
+            let data: { error?: string; token?: string } = {};
+            try { data = JSON.parse(text); } catch { /* non-JSON — likely a server error page */ }
+            if (!res.ok) {
+                setInviteError(data.error || `Server error (${res.status}). Restart the dev server and try again.`);
+                return;
+            }
+            if (!data.token) { setInviteError("No token returned. Restart the dev server and try again."); return; }
+            setInviteEmail("");
+            setInviteSuccess(true);
+            setTimeout(() => setInviteSuccess(false), 3000);
+            fetchInvites();
+        } catch (e) {
+            setInviteError(`Network error: ${e instanceof Error ? e.message : String(e)}`);
+        } finally {
+            setInviting(false);
+        }
+    }
+
+    async function revokeInvite(id: string) {
+        await fetch(`/api/sharing/${id}`, { method: "DELETE" });
+        setInvites((prev) => prev.map((i) => i.id === id ? { ...i, status: "REVOKED" } : i));
+    }
+
+    async function deleteInvite(id: string) {
+        await fetch(`/api/sharing/${id}?action=delete`, { method: "DELETE" });
+        setInvites((prev) => prev.filter((i) => i.id !== id));
+    }
+
+    function getAcceptLink(token: string) {
+        return `${window.location.origin}/sharing/accept?token=${token}`;
+    }
+
+    function copyLink(token: string) {
+        navigator.clipboard.writeText(getAcceptLink(token));
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    }
+
     const TYPE_LABELS: Record<string, string> = {
         MONTHLY: "Monthly", ANNUAL: "Annual", FIXED_COST: "Fixed Cost",
         PRIMARY_CHECKING: "Primary Checking", OTHER_CHECKING: "Other Checking",
@@ -107,13 +182,17 @@ export default function SettingsPage() {
                 {user && (
                     <p className="text-slate-400 text-sm mt-0.5">{user.emailAddresses[0]?.emailAddress}</p>
                 )}
-                <div className="flex gap-2 mt-4">
-                    {(["categories", "accounts", "data"] as const).map((t) => (
+                <div className="flex gap-2 mt-4 flex-wrap">
+                    {(["categories", "accounts", "data", "sharing"] as const).map((t) => (
                         <button
                             key={t}
                             onClick={() => setTab(t)}
                             className={`px-3 py-1.5 rounded-xl text-xs font-medium capitalize transition-all ${tab === t ? "bg-indigo-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
-                        >{t}</button>
+                        >
+                            {t === "sharing" ? (
+                                <span className="flex items-center gap-1"><Users size={11} /> Sharing</span>
+                            ) : t}
+                        </button>
                     ))}
                 </div>
             </div>
@@ -196,7 +275,6 @@ export default function SettingsPage() {
 
                         {/* Master Reset — collapsible */}
                         <div className="border border-red-800/40 rounded-2xl overflow-hidden">
-                            {/* Accordion header */}
                             <button
                                 onClick={() => { setResetOpen((o) => !o); setResetConfirm(false); }}
                                 className="w-full flex items-center justify-between px-4 py-3 bg-red-950/30 hover:bg-red-950/50 transition-colors"
@@ -211,7 +289,6 @@ export default function SettingsPage() {
                                 />
                             </button>
 
-                            {/* Accordion body */}
                             {resetOpen && (
                                 <div className="px-4 pb-4 pt-3 bg-red-950/20">
                                     <p className="text-red-400/70 text-xs mb-3">
@@ -226,8 +303,8 @@ export default function SettingsPage() {
                                         onClick={handleMasterReset}
                                         disabled={resetting}
                                         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all disabled:opacity-50 ${resetConfirm
-                                                ? "bg-red-600 hover:bg-red-500 text-white animate-pulse"
-                                                : "bg-red-900/50 hover:bg-red-800/60 text-red-300 border border-red-700/50"
+                                            ? "bg-red-600 hover:bg-red-500 text-white animate-pulse"
+                                            : "bg-red-900/50 hover:bg-red-800/60 text-red-300 border border-red-700/50"
                                             }`}
                                     >
                                         <Trash2 size={16} />
@@ -241,6 +318,99 @@ export default function SettingsPage() {
                                             Cancel
                                         </button>
                                     )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {tab === "sharing" && (
+                    <div className="space-y-4">
+                        {/* Invite form */}
+                        <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-4">
+                            <div className="flex items-center gap-2 mb-1">
+                                <UserPlus size={16} className="text-indigo-400" />
+                                <h3 className="text-sm font-semibold text-white">Invite Someone</h3>
+                            </div>
+                            <p className="text-slate-400 text-xs mb-3">They&apos;ll get a link to accept. Once accepted, they can view and add data.</p>
+                            <div className="flex gap-2">
+                                <input
+                                    type="email"
+                                    value={inviteEmail}
+                                    onChange={(e) => { setInviteEmail(e.target.value); setInviteError(""); }}
+                                    onKeyDown={(e) => e.key === "Enter" && sendInvite()}
+                                    placeholder="email@example.com"
+                                    className="flex-1 bg-slate-700/60 border border-slate-600/50 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                                />
+                                <button
+                                    onClick={sendInvite}
+                                    disabled={inviting}
+                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-medium text-white transition-all disabled:opacity-50 whitespace-nowrap"
+                                >
+                                    {inviting ? "Sending…" : "Invite"}
+                                </button>
+                            </div>
+                            {inviteError && <p className="text-red-400 text-xs mt-2">{inviteError}</p>}
+                            {inviteSuccess && <p className="text-emerald-400 text-xs mt-2">✓ Invite created! The link is shown below.</p>}
+                        </div>
+
+                        {/* Existing invites */}
+                        <div>
+                            <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Existing Invites</h2>
+                            {invites.length === 0 ? (
+                                <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-6 text-center">
+                                    <Users size={28} className="text-slate-600 mx-auto mb-2" />
+                                    <p className="text-slate-500 text-sm">No invites sent yet.</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {invites.map((invite) => (
+                                        <div key={invite.id} className="bg-slate-800/50 border border-slate-700/50 rounded-2xl px-4 py-3">
+                                            {/* Row: email + status + revoke */}
+                                            <div className="flex items-center justify-between gap-3">
+                                                <div className="min-w-0">
+                                                    <p className="text-sm text-white font-medium truncate">{invite.inviteeEmail}</p>
+                                                    <p className="text-xs text-slate-500 mt-0.5">
+                                                        {new Date(invite.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-2 flex-shrink-0">
+                                                    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${STATUS_STYLES[invite.status]}`}>
+                                                        {invite.status}
+                                                    </span>
+                                                    {invite.status !== "REVOKED" && (
+                                                        <button
+                                                            onClick={() => revokeInvite(invite.id)}
+                                                            className="p-1.5 rounded-lg text-slate-500 hover:text-amber-400 transition-colors"
+                                                            title="Revoke access"
+                                                        >
+                                                            <UserX size={13} />
+                                                        </button>
+                                                    )}
+                                                    <button
+                                                        onClick={() => deleteInvite(invite.id)}
+                                                        className="p-1.5 rounded-lg text-slate-500 hover:text-red-400 transition-colors"
+                                                        title="Delete invite"
+                                                    >
+                                                        <Trash2 size={13} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            {/* Invite link — always visible */}
+                                            <div className="mt-2 flex items-center gap-2 bg-slate-900/60 border border-slate-700/50 rounded-xl px-3 py-2">
+                                                <code className="flex-1 text-[11px] text-slate-300 truncate">
+                                                    {getAcceptLink(invite.token)}
+                                                </code>
+                                                <button
+                                                    onClick={() => copyLink(invite.token)}
+                                                    className={`flex-shrink-0 p-1.5 rounded-lg transition-all ${copied ? "bg-emerald-600 text-white" : "bg-slate-700 text-slate-300 hover:bg-indigo-600 hover:text-white"}`}
+                                                    title="Copy invite link"
+                                                >
+                                                    {copied ? <Check size={13} /> : <Copy size={13} />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
                             )}
                         </div>

@@ -2,6 +2,7 @@
 import { useUser, useClerk } from "@clerk/nextjs";
 import { LogOut } from "lucide-react";
 import { useState } from "react";
+import Link from "next/link";
 
 export function Header() {
     const { user } = useUser();
@@ -21,7 +22,7 @@ export function Header() {
             <div className="flex items-center justify-between px-4 h-14">
 
                 {/* Logo + Name */}
-                <div className="flex items-center gap-2.5">
+                <Link href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
                     {/* Logo mark */}
                     <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-900/40 flex-shrink-0">
                         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -33,7 +34,7 @@ export function Header() {
                         <p className="text-white font-bold text-sm tracking-tight">JOG WealthFlow</p>
                         <p className="text-slate-500 text-[10px] leading-none">Jeevitha&apos;s Family Finance</p>
                     </div>
-                </div>
+                </Link>
 
                 {/* User menu */}
                 {user && (

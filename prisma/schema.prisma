@@ -22,6 +22,8 @@ model User {
   expenses       Expense[]
   balanceEntries BalanceSheetEntry[]
   properties     RentalProperty[]
+  ownedShares    SharedAccess[]      @relation("OwnedShares")
+  receivedShares SharedAccess[]      @relation("ReceivedShares")
 }
 
 model Config {
@@ -128,4 +130,22 @@ model RentalProperty {
   monthlyRent       Decimal @default(0)
   maintenancePct    Decimal @default(0.10)
   isActive          Boolean @default(true)
+}
+
+model SharedAccess {
+  id            String      @id @default(cuid())
+  token         String      @unique @default(cuid())
+  ownerUserId   String
+  owner         User        @relation("OwnedShares", fields: [ownerUserId], references: [id])
+  inviteeEmail  String
+  inviteeUserId String?
+  invitee       User?       @relation("ReceivedShares", fields: [inviteeUserId], references: [id])
+  status        ShareStatus @default(PENDING)
+  createdAt     DateTime    @default(now())
+}
+
+enum ShareStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
 }
