@@ -1,16 +1,20 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { CategoryType } from "@prisma/client";
+import { getEffectiveUserId } from "@/lib/getEffectiveUserId";
 
-export async function GET() {
+export async function GET(req: Request) {
     const { userId: clerkId } = await auth();
     if (!clerkId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const user = await prisma.user.findUnique({ where: { clerkId } });
     if (!user) return NextResponse.json([]);
 
+    const effectiveUserId = await getEffectiveUserId(req, user.id);
+
     const categories = await prisma.budgetCategory.findMany({
-        where: { userId: user.id, isActive: true },
+        where: { userId: effectiveUserId, isActive: true },
         orderBy: [{ type: "asc" }, { sortOrder: "asc" }],
     });
 
@@ -24,15 +28,17 @@ export async function POST(req: Request) {
     const user = await prisma.user.findUnique({ where: { clerkId } });
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
+    const effectiveUserId = await getEffectiveUserId(req, user.id);
+
     const body = await req.json();
-    const incoming: { name: string; type: string; budgetAmount: number; sortOrder: number }[] = body.categories;
+    const incoming: { name: string; type: CategoryType; budgetAmount: number; sortOrder: number }[] = body.categories;
 
     // Fetch existing active categories for this user
-    const existing: { id: string; name: string; type: string }[] = await prisma.budgetCategory.findMany({ where: { userId: user.id, isActive: true } });
+    const existing: { id: string; name: string; type: string }[] = await prisma.budgetCategory.findMany({ where: { userId: effectiveUserId, isActive: true } });
 
     // Upsert each incoming category by name+type (preserves IDs → no orphaned expenses)
     for (const cat of incoming) {
-        const match = existing.find((e: { id: string; name: string; type: string }) => e.name === cat.name && e.type === cat.type);
+        const match = existing.find((e: { id: string; name: string; type: string }) => e.name === cat.name && e.type === (cat.type as string));
         if (match) {
             await prisma.budgetCategory.update({
                 where: { id: match.id },
@@ -40,7 +46,7 @@ export async function POST(req: Request) {
             });
         } else {
             await prisma.budgetCategory.create({
-                data: { userId: user.id, name: cat.name, type: cat.type, budgetAmount: cat.budgetAmount, sortOrder: cat.sortOrder || 0 },
+                data: { userId: effectiveUserId, name: cat.name, type: cat.type as CategoryType, budgetAmount: cat.budgetAmount, sortOrder: cat.sortOrder || 0 },
             });
         }
     }
